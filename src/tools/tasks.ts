@@ -4,6 +4,7 @@ import type { ResolvedDirs } from '../ipc/directories.js';
 import { sendCommand } from '../ipc/command-sender.js';
 import type { TaskFilters } from '../ipc/types.js';
 import { errorResult, okResult } from './result.js';
+import { formatDurationMs, formatTimestampMs } from '../utils/time-formatters.js';
 
 interface TaskRecord {
   id: string;
@@ -16,10 +17,11 @@ interface TaskRecord {
   dueDay?: string | null;
   dueWithTime?: number | null;
   plannedAt?: number | null;
+  remindAt?: number | null;
+  doneOn?: number | null;
   timeSpentOnDay?: Record<string, number>;
   timeEstimate: number;
   timeSpent: number;
-  doneOn?: number | null;
   repeatCfgId?: string | null;
   [key: string]: unknown;
 }
@@ -48,11 +50,28 @@ export function applyTriageFilters(
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const startOfTomorrow = startOfToday + 86_400_000;
     result = result.filter(t => {
+      // Tasks created outside MCP may not have plannedAt set, but can have dueWithTime for today
       const p = t.plannedAt;
-      return p != null && p >= startOfToday && p < startOfTomorrow;
+      const d = t.dueWithTime;
+      const hasPlanned = p != null && p >= startOfToday && p < startOfTomorrow;
+      const hasDue = d != null && d >= startOfToday && d < startOfTomorrow;
+      return hasPlanned || hasDue;
     });
   }
   return result;
+}
+
+/** Add human-readable timestamp/duration fields to each task. */
+function addReadableFields(tasks: TaskRecord[]): TaskRecord[] {
+  return tasks.map(t => ({
+    ...t,
+    dueWithTimeReadable: formatTimestampMs(t.dueWithTime),
+    plannedAtReadable: formatTimestampMs(t.plannedAt),
+    remindAtReadable: formatTimestampMs(t.remindAt),
+    doneOnReadable: formatTimestampMs(t.doneOn),
+    timeEstimateReadable: formatDurationMs(t.timeEstimate),
+    timeSpentReadable: formatDurationMs(t.timeSpent),
+  }));
 }
 
 export function registerTaskTools(server: McpServer, dirs: ResolvedDirs): void {
@@ -147,11 +166,21 @@ export function registerTaskTools(server: McpServer, dirs: ResolvedDirs): void {
       // Triage filters (FR-004, FR-005, FR-006)
       tasks = applyTriageFilters(tasks, { parentsOnly: parents_only, overdue, unscheduled, plannedForToday: planned_for_today });
 
+      // Add readable timestamp/duration fields
+      tasks = addReadableFields(tasks);
+
       // Field selection (005-FR-001)
       if (fields && fields.length > 0) {
+        const readableFields = [
+          'dueWithTimeReadable', 'plannedAtReadable', 'remindAtReadable',
+          'doneOnReadable', 'timeEstimateReadable', 'timeSpentReadable',
+        ];
         const shaped = tasks.map(t => {
           const obj: Record<string, unknown> = {};
           for (const f of fields) { if (f in t) obj[f] = (t as Record<string, unknown>)[f]; }
+          for (const rf of readableFields) {
+            if (rf in t) obj[rf] = (t as Record<string, unknown>)[rf];
+          }
           return obj;
         });
         return okResult(shaped);
@@ -486,6 +515,10 @@ export function registerTaskTools(server: McpServer, dirs: ResolvedDirs): void {
       let totalEstimate = 0;
       let totalActual = 0;
 
+      const dailyReadable: Record<string, string | null> = {};
+      const byProjectReadable: Record<string, string | null> = {};
+      const byTagReadable: Record<string, string | null> = {};
+
       for (const task of tasks) {
         // Aggregate timeSpentOnDay within range
         if (task.timeSpentOnDay) {
@@ -514,14 +547,34 @@ export function registerTaskTools(server: McpServer, dirs: ResolvedDirs): void {
         }
       }
 
+      // Format durations as HH:MM:SS
+      for (const [date, ms] of Object.entries(daily)) {
+        dailyReadable[date] = formatDurationMs(ms);
+      }
+      for (const [key, ms] of Object.entries(byProject)) {
+        byProjectReadable[key] = formatDurationMs(ms);
+      }
+      for (const [key, ms] of Object.entries(byTag)) {
+        byTagReadable[key] = formatDurationMs(ms);
+      }
+
       return okResult({
         dateRange: { start: start_date, end: end_date },
         daily,
+        dailyReadable,
         byProject,
+        byProjectReadable,
         byTag,
+        byTagReadable,
         tasksCompleted: completedCount,
         estimateAccuracy: totalEstimate > 0
-          ? { estimateMs: totalEstimate, actualMs: totalActual, ratio: totalActual / totalEstimate }
+          ? {
+              estimateMs: totalEstimate,
+              actualMs: totalActual,
+              estimateReadable: formatDurationMs(totalEstimate),
+              actualReadable: formatDurationMs(totalActual),
+              ratio: totalActual / totalEstimate,
+            }
           : null,
       });
     },

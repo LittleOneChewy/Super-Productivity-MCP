@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ResolvedDirs } from '../ipc/directories.js';
 import { sendCommand } from '../ipc/command-sender.js';
 import { applyTriageFilters } from '../tools/tasks.js';
+import { formatDurationMs, formatTimestampMs } from '../utils/time-formatters.js';
 
 interface TaskRecord {
   id: string;
@@ -11,7 +12,10 @@ interface TaskRecord {
   parentId?: string | null;
   tagIds: string[];
   dueDay?: string | null;
+  dueWithTime?: number | null;
   plannedAt?: number | null;
+  remindAt?: number | null;
+  doneOn?: number | null;
   timeEstimate: number;
   timeSpent: number;
   [key: string]: unknown;
@@ -24,9 +28,18 @@ function shapeTask(t: TaskRecord) {
     projectId: t.projectId,
     tagIds: t.tagIds,
     dueDay: t.dueDay ?? null,
+    dueWithTime: t.dueWithTime ?? null,
+    dueWithTimeReadable: formatTimestampMs(t.dueWithTime),
     plannedAt: t.plannedAt ?? null,
+    plannedAtReadable: formatTimestampMs(t.plannedAt),
+    remindAt: t.remindAt ?? null,
+    remindAtReadable: formatTimestampMs(t.remindAt),
+    doneOn: t.doneOn ?? null,
+    doneOnReadable: formatTimestampMs(t.doneOn),
     timeEstimate: t.timeEstimate,
+    timeEstimateReadable: formatDurationMs(t.timeEstimate),
     timeSpent: t.timeSpent,
+    timeSpentReadable: formatDurationMs(t.timeSpent),
     parentId: t.parentId ?? null,
   };
 }

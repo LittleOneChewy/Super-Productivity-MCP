@@ -306,16 +306,19 @@ describe('task tool logic', () => {
   describe('get_tasks planned_for_today filter', () => {
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfTomorrow = startOfToday + 86_400_000;
     const tasks = [
       { id: '1', title: 'Planned today', isDone: false, projectId: 'p1', tagIds: [], parentId: null, dueDay: null, dueWithTime: null, timeEstimate: 0, timeSpent: 0, plannedAt: startOfToday + 3600000 },
       { id: '2', title: 'Planned yesterday', isDone: false, projectId: 'p1', tagIds: [], parentId: null, dueDay: null, dueWithTime: null, timeEstimate: 0, timeSpent: 0, plannedAt: startOfToday - 86400000 },
       { id: '3', title: 'Not planned', isDone: false, projectId: 'p1', tagIds: [], parentId: null, dueDay: null, dueWithTime: null, timeEstimate: 0, timeSpent: 0, plannedAt: null },
       { id: '4', title: 'Subtask planned today', isDone: false, projectId: null, tagIds: [], parentId: 'p-1', dueDay: null, dueWithTime: null, timeEstimate: 0, timeSpent: 0, plannedAt: startOfToday + 1000 },
+      { id: '5', title: 'Due today no plannedAt', isDone: false, projectId: 'p1', tagIds: [], parentId: null, dueDay: null, dueWithTime: startOfToday + 7200000, timeEstimate: 0, timeSpent: 0, plannedAt: null },
+      { id: '6', title: 'Due tomorrow', isDone: false, projectId: 'p1', tagIds: [], parentId: null, dueDay: null, dueWithTime: startOfTomorrow + 3600000, timeEstimate: 0, timeSpent: 0, plannedAt: null },
     ];
 
     it('returns only tasks planned for today', () => {
       const result = applyTriageFilters(tasks, { plannedForToday: true });
-      expect(result.map(t => t.id)).toEqual(['1', '4']);
+      expect(result.map(t => t.id)).toEqual(['1', '4', '5']);
     });
 
     it('excludes tasks planned yesterday', () => {
@@ -323,14 +326,24 @@ describe('task tool logic', () => {
       expect(result.find(t => t.id === '2')).toBeUndefined();
     });
 
-    it('excludes tasks with null plannedAt', () => {
+    it('excludes tasks with null plannedAt and null dueWithTime', () => {
       const result = applyTriageFilters(tasks, { plannedForToday: true });
       expect(result.find(t => t.id === '3')).toBeUndefined();
     });
 
+    it('includes tasks with dueWithTime today even without plannedAt', () => {
+      const result = applyTriageFilters(tasks, { plannedForToday: true });
+      expect(result.find(t => t.id === '5')).toBeDefined();
+    });
+
+    it('excludes tasks with dueWithTime tomorrow', () => {
+      const result = applyTriageFilters(tasks, { plannedForToday: true });
+      expect(result.find(t => t.id === '6')).toBeUndefined();
+    });
+
     it('combines with parents_only (AND logic)', () => {
       const result = applyTriageFilters(tasks, { plannedForToday: true, parentsOnly: true });
-      expect(result.map(t => t.id)).toEqual(['1']);
+      expect(result.map(t => t.id)).toEqual(['1', '5']);
     });
   });
 
